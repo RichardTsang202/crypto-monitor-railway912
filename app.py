@@ -891,10 +891,27 @@ class CryptoPatternMonitor:
         self.monitoring_active = False
         self.executor.shutdown(wait=True)
 
+# 创建全局Flask应用实例供gunicorn使用
+monitor = None
+app = None
+
+def create_app():
+    """创建Flask应用实例"""
+    global monitor, app
+    if monitor is None:
+        monitor = CryptoPatternMonitor()
+        app = monitor.app
+    return app
+
+# 初始化应用
+app = create_app()
+
 def main():
     """主函数"""
     try:
-        monitor = CryptoPatternMonitor()
+        global monitor
+        if monitor is None:
+            monitor = CryptoPatternMonitor()
         monitor.start_monitoring()
     except KeyboardInterrupt:
         logger.info("接收到停止信号")

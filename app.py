@@ -105,6 +105,84 @@ class CryptoPatternMonitor:
     def setup_routes(self):
         """设置Flask路由"""
         @self.app.route('/')
+        def index():
+            return '''
+            <!DOCTYPE html>
+            <html lang="zh-CN">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>加密货币形态监控系统</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
+                    .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+                    h1 { color: #333; text-align: center; margin-bottom: 30px; }
+                    .status-card { background: #e8f5e8; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #4caf50; }
+                    .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 20px 0; }
+                    .info-item { background: #f8f9fa; padding: 15px; border-radius: 6px; text-align: center; }
+                    .info-item h3 { margin: 0 0 10px 0; color: #666; font-size: 14px; }
+                    .info-item .value { font-size: 24px; font-weight: bold; color: #333; }
+                    .api-section { margin: 20px 0; }
+                    .btn { display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px; margin: 5px; }
+                    .btn:hover { background: #0056b3; }
+                    .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <h1>🚀 加密货币形态监控系统</h1>
+                    
+                    <div class="status-card">
+                        <h2>✅ 系统状态：运行中</h2>
+                        <p>实时监控加密货币技术形态，包括双顶、双底、头肩顶、头肩底等经典形态</p>
+                    </div>
+                    
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <h3>监控币种</h3>
+                            <div class="value">''' + str(len(self.symbols_to_monitor)) + '''</div>
+                        </div>
+                        <div class="info-item">
+                            <h3>时间周期</h3>
+                            <div class="value">''' + str(len(self.timeframes)) + '''</div>
+                        </div>
+                        <div class="info-item">
+                            <h3>运行时间</h3>
+                            <div class="value" id="uptime">计算中...</div>
+                        </div>
+                    </div>
+                    
+                    <div class="api-section">
+                        <h3>📊 API接口</h3>
+                        <a href="/api/health" class="btn">健康检查</a>
+                        <a href="/api/status" class="btn">详细状态</a>
+                    </div>
+                    
+                    <div class="footer">
+                        <p>Crypto Pattern Monitor v1.0 | 部署在 Railway 平台</p>
+                        <p>监控币种: BTC, ETH, BNB, SOL, XRP, DOGE, TON, ADA, SHIB, AVAX</p>
+                    </div>
+                </div>
+                
+                <script>
+                    // 更新运行时间
+                    function updateUptime() {
+                        const startTime = ''' + str(int(time.time())) + '''; // 服务器启动时间
+                        const now = Math.floor(Date.now() / 1000);
+                        const uptime = now - startTime;
+                        const hours = Math.floor(uptime / 3600);
+                        const minutes = Math.floor((uptime % 3600) / 60);
+                        document.getElementById('uptime').textContent = hours + 'h ' + minutes + 'm';
+                    }
+                    
+                    updateUptime();
+                    setInterval(updateUptime, 60000); // 每分钟更新一次
+                </script>
+            </body>
+            </html>
+            '''
+        
+        @self.app.route('/api/health')
         def health_check():
             return jsonify({
                 'status': 'running',
@@ -113,7 +191,7 @@ class CryptoPatternMonitor:
                 'timeframes': self.timeframes
             })
         
-        @self.app.route('/status')
+        @self.app.route('/api/status')
         def get_status():
             cache_stats = {}
             for symbol in self.symbols_to_monitor[:5]:  # 只显示前5个

@@ -32,16 +32,59 @@ from dataclasses import dataclass
 import gc
 import psutil
 
-# 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler('realtime_monitor.log', encoding='utf-8'),
-        logging.StreamHandler(sys.stdout)
-    ]
-)
-logger = logging.getLogger(__name__)
+# 配置日志 - 优化Railway环境支持
+def setup_logging():
+    """设置日志配置，优化Railway环境支持"""
+    # 检测是否在Railway环境
+    is_railway = os.environ.get('RAILWAY_ENVIRONMENT') is not None or os.environ.get('PORT') is not None
+    
+    handlers = []
+    
+    # 文件日志处理器
+    try:
+        file_handler = logging.FileHandler('realtime_monitor.log', encoding='utf-8')
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        handlers.append(file_handler)
+    except Exception as e:
+        print(f"无法创建文件日志处理器: {e}")
+    
+    # 控制台日志处理器
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    handlers.append(console_handler)
+    
+    # Railway环境特殊配置
+    if is_railway:
+        # 确保日志立即刷新到stdout
+        console_handler.setLevel(logging.INFO)
+        # 添加额外的stderr处理器以确保错误日志可见
+        stderr_handler = logging.StreamHandler(sys.stderr)
+        stderr_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        stderr_handler.setLevel(logging.WARNING)
+        handlers.append(stderr_handler)
+    
+    # 配置根日志记录器
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=handlers,
+        force=True  # 强制重新配置
+    )
+    
+    # 设置特定库的日志级别
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
+    logging.getLogger('requests').setLevel(logging.WARNING)
+    
+    return logging.getLogger(__name__)
+
+# 初始化日志
+logger = setup_logging()
+
+# Railway环境检测日志
+if os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT'):
+    logger.info("检测到Railway部署环境，已优化日志配置")
+else:
+    logger.info("本地开发环境，使用标准日志配置")
 
 @dataclass
 class ExtremePoint:
@@ -166,7 +209,7 @@ class CryptoPatternMonitor:
         self.current_api_index = 0
         self.monitored_pairs = self._get_monitored_pairs()
         self.timeframes = ['1h', '4h', '1d']
-        self.webhook_url = "https://n8n-ayzvkyda.ap-northeast-1.clawcloudrun.com/webhook-test/double_t_b"
+        self.webhook_url = "https://n8n-ayzvkyda.ap-northeast-1.clawcloudrun.com/webhook/double_t_b"
         
         # 数据缓存系统
         self.data_cache = DataCache(max_size=500, ttl_seconds=240)  # 4分钟缓存
@@ -1494,13 +1537,19 @@ class CryptoPatternMonitor:
     def _analyze_pattern(self, symbol: str, timeframe: str) -> Optional[Dict]:
         """分析单个交易对的形态"""
         try:
+            logger.debug(f"开始分析形态: {symbol} {timeframe}")
+            
             # 初始化或更新形态缓存
-            if f"{symbol}_{timeframe}" not in self.pattern_cache:
+            cache_key = f"{symbol}_{timeframe}"
+            if cache_key not in self.pattern_cache:
+                logger.debug(f"初始化形态缓存: {symbol} {timeframe}")
                 self._initialize_pattern_cache(symbol, timeframe)
             else:
+                logger.debug(f"更新形态缓存: {symbol} {timeframe}")
                 self._update_pattern_cache(symbol, timeframe)
             
             # 检测四种形态
+            pattern_types = ['双顶', '双底', '头肩顶', '头肩底']
             patterns = [
                 self._detect_double_top(symbol, timeframe),
                 self._detect_double_bottom(symbol, timeframe),
@@ -1509,17 +1558,28 @@ class CryptoPatternMonitor:
             ]
             
             # 返回第一个检测到的形态
-            for pattern in patterns:
+            for i, pattern in enumerate(patterns):
                 if pattern:
+                    pattern_name = pattern_types[i]
+                    quality_score = pattern.get('quality_score', 0)
+                    logger.info(f"🎯 检测到形态: {symbol} {timeframe} - {pattern_name} (质量分数: {quality_score:.2f})")
+                    
                     # 计算额外指标
+                    logger.debug(f"计算技术指标: {symbol} {timeframe}")
                     additional_indicators = self._calculate_additional_indicators(symbol, timeframe, pattern)
                     pattern.update(additional_indicators)
+                    
+                    # 记录关键点信息
+                    if 'point_a' in pattern and 'point_b' in pattern and 'point_c' in pattern:
+                        logger.debug(f"关键点 - A: {pattern['point_a']['price']:.4f}, B: {pattern['point_b']['price']:.4f}, C: {pattern['point_c']['price']:.4f}")
+                    
                     return pattern
             
+            logger.debug(f"未检测到形态: {symbol} {timeframe}")
             return None
             
         except Exception as e:
-            logger.error(f"分析 {symbol} {timeframe} 形态失败: {str(e)}")
+            logger.error(f"❌ 分析 {symbol} {timeframe} 形态失败: {str(e)}")
             raise
     
     def _should_send_signal(self, symbol: str, timeframe: str, pattern_type: str) -> bool:
@@ -1544,6 +1604,12 @@ class CryptoPatternMonitor:
         max_retries = 3
         retry_delays = [1, 3, 5]
         
+        symbol = pattern_data.get('symbol', 'UNKNOWN')
+        pattern_type = pattern_data.get('pattern_type', 'UNKNOWN')
+        timeframe = pattern_data.get('timeframe', 'UNKNOWN')
+        
+        logger.info(f"准备发送Webhook - {symbol} {pattern_type} ({timeframe})")
+        
         for attempt in range(max_retries):
             try:
                 # 获取当前价格
@@ -1552,8 +1618,10 @@ class CryptoPatternMonitor:
                     current_price = pattern_data.get('point_b', {}).get('price', 0)
                 
                 if not current_price or current_price <= 0:
-                    logger.error(f"无效价格数据: {current_price}")
+                    logger.error(f"无效价格数据: {current_price} - {symbol} {pattern_type}")
                     return False
+                
+                logger.debug(f"Webhook数据准备 - 价格: {current_price}, 质量分数: {pattern_data.get('quality_score', 0)}")
                 
                 # 准备发送的数据
                 webhook_data = {
@@ -1607,6 +1675,7 @@ class CryptoPatternMonitor:
                 webhook_data['volume_divergence'] = divergence_data.get('volume_divergence', False)
                 
                 # 发送请求
+                logger.debug(f"发送Webhook请求到: {self.webhook_url}")
                 response = requests.post(
                     self.webhook_url,
                     json=webhook_data,
@@ -1615,26 +1684,50 @@ class CryptoPatternMonitor:
                 )
                 
                 if response.status_code == 200:
-                    logger.info(f"Webhook发送成功: {pattern_data['symbol']} {pattern_data['pattern_type']}")
+                    logger.info(f"✅ Webhook发送成功: {symbol} {pattern_type} - 价格: {current_price}")
                     return True
                 elif response.status_code in [429, 502, 503, 504]:
-                    logger.warning(f"Webhook发送失败(可重试): {response.status_code}, 尝试 {attempt + 1}/{max_retries}")
+                    logger.warning(f"⚠️ Webhook发送失败(可重试): HTTP {response.status_code} - {symbol} {pattern_type}, 尝试 {attempt + 1}/{max_retries}")
                     if attempt < max_retries - 1:
+                        logger.info(f"等待 {retry_delays[attempt]} 秒后重试...")
                         time.sleep(retry_delays[attempt])
                         continue
                 else:
-                    logger.error(f"Webhook发送失败(不可重试): {response.status_code}")
+                    logger.error(f"❌ Webhook发送失败(不可重试): HTTP {response.status_code} - {symbol} {pattern_type}")
+                    try:
+                        logger.error(f"响应内容: {response.text[:200]}")
+                    except:
+                        pass
                     return False
                     
             except requests.exceptions.Timeout:
-                logger.warning(f"Webhook请求超时, 尝试 {attempt + 1}/{max_retries}")
+                logger.warning(f"⏰ Webhook请求超时 - {symbol} {pattern_type}, 尝试 {attempt + 1}/{max_retries}")
                 if attempt < max_retries - 1:
+                    logger.info(f"等待 {retry_delays[attempt]} 秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error(f"❌ Webhook请求超时，已达最大重试次数 - {symbol} {pattern_type}")
+                    return False
+            except requests.exceptions.ConnectionError as e:
+                logger.warning(f"🔌 Webhook连接错误 - {symbol} {pattern_type}: {str(e)[:100]}, 尝试 {attempt + 1}/{max_retries}")
+                if attempt < max_retries - 1:
+                    logger.info(f"等待 {retry_delays[attempt]} 秒后重试...")
+                    time.sleep(retry_delays[attempt])
+                    continue
+                else:
+                    logger.error(f"❌ Webhook连接失败，已达最大重试次数 - {symbol} {pattern_type}")
+                    return False
+            except Exception as e:
+                logger.error(f"❌ Webhook发送异常 - {symbol} {pattern_type}: {str(e)[:100]}")
+                if attempt < max_retries - 1:
+                    logger.info(f"等待 {retry_delays[attempt]} 秒后重试...")
                     time.sleep(retry_delays[attempt])
                     continue
                 else:
                     return False
         
-        logger.error(f"Webhook发送失败，已重试{max_retries}次")
+        logger.error(f"❌ Webhook发送最终失败 - {symbol} {pattern_type}，已重试{max_retries}次")
         return False
     
     def _analyze_all_pairs_concurrent(self, timeframe: str):
@@ -1811,10 +1904,13 @@ class CryptoPatternMonitor:
         consecutive_errors = 0
         max_consecutive_errors = 8  # 增加容错性
         error_backoff_delays = [30, 60, 120, 300]
+        cycle_count = 0  # 添加周期计数
         
         # 更新线程健康状态
         if timeframe in self.thread_health:
             self.thread_health[timeframe]['last_activity'] = datetime.now()
+        
+        logger.info(f"[{timeframe}] 监控线程已启动，开始运行循环")
         
         # 启动时立即执行一次分析
         logger.info(f"启动时立即分析 {timeframe}")
@@ -1829,12 +1925,17 @@ class CryptoPatternMonitor:
         
         while self.running:
             try:
+                cycle_count += 1
                 # 更新线程活动时间
                 if timeframe in self.thread_health:
                     self.thread_health[timeframe]['last_activity'] = datetime.now()
                 
                 current_time = datetime.now()
                 should_analyze = False
+                
+                # 每10个周期记录一次运行状态
+                if cycle_count % 10 == 0:
+                    logger.info(f"[{timeframe}] 运行状态检查 - 周期: {cycle_count}, 连续错误: {consecutive_errors}, 时间: {current_time.strftime('%H:%M:%S')}")
                 
                 # 根据时间粒度确定是否应该分析（增加容错时间窗口）
                 if timeframe == '1h':
@@ -1896,6 +1997,16 @@ class CryptoPatternMonitor:
                 
                 # 动态调整检查间隔
                 check_interval = 30 if consecutive_errors == 0 else 60
+                
+                # 每100个周期清理一次缓存
+                if cycle_count % 100 == 0:
+                    logger.info(f"[{timeframe}] 执行定期缓存清理 - 周期: {cycle_count}")
+                    try:
+                        self.data_cache._cleanup_cache()
+                        logger.info(f"[{timeframe}] 缓存清理完成")
+                    except Exception as e:
+                        logger.error(f"[{timeframe}] 缓存清理失败: {str(e)}")
+                
                 time.sleep(check_interval)
                 
             except KeyboardInterrupt:
@@ -1989,8 +2100,14 @@ class CryptoPatternMonitor:
             
             self._update_system_health('running')
             
-            # 启动Flask应用
-            app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+            # 检测运行环境
+            is_railway = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT')
+            if not is_railway:
+                # 仅在本地环境启动Flask应用
+                logger.info("本地环境检测到，启动Flask应用")
+                app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 5000)), debug=False)
+            else:
+                logger.info("Railway环境检测到，监控系统已在后台启动，Flask由gunicorn管理")
             
         except Exception as e:
             logger.error(f"启动监控系统失败: {str(e)}")
@@ -2008,25 +2125,98 @@ monitor = CryptoPatternMonitor()
 # Flask应用
 app = Flask(__name__)
 
+# 在应用启动时自动启动监控系统
+def start_monitoring_on_startup():
+    """在应用启动时启动监控系统"""
+    if not monitor.running:
+        is_railway = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT')
+        if is_railway:
+            logger.info("Railway环境检测到，自动启动监控系统")
+            # 在后台线程中启动监控（不启动Flask应用）
+            import threading
+            def start_monitor_only():
+                try:
+                    monitor.running = True
+                    monitor._update_system_health('starting')
+                    
+                    # 启动各时间粒度的监控线程
+                    for timeframe in monitor.timeframes:
+                        thread = threading.Thread(
+                            target=monitor._monitor_timeframe,
+                            args=(timeframe,),
+                            daemon=True,
+                            name=f"Monitor-{timeframe}"
+                        )
+                        thread.start()
+                        
+                        monitor.monitor_threads[timeframe] = thread
+                        monitor.thread_health[timeframe] = {
+                            'status': 'starting',
+                            'last_activity': datetime.now(),
+                            'error_count': 0,
+                            'last_error': None
+                        }
+                        
+                        logger.info(f"启动 {timeframe} 监控线程")
+                    
+                    # 启动健康检查线程
+                    health_thread = threading.Thread(
+                        target=monitor._health_check_loop,
+                        daemon=True,
+                        name="HealthCheck"
+                    )
+                    health_thread.start()
+                    logger.info("启动健康检查线程")
+                    
+                    monitor._update_system_health('running')
+                    logger.info("监控系统启动完成（Railway环境）")
+                    
+                except Exception as e:
+                    logger.error(f"启动监控系统失败: {str(e)}")
+                    monitor._update_system_health('error', e)
+            
+            monitor_thread = threading.Thread(target=start_monitor_only, daemon=True)
+            monitor_thread.start()
+
+# 使用应用上下文启动监控
+with app.app_context():
+    start_monitoring_on_startup()
+
 @app.route('/')
 def index():
     """主页"""
-    return jsonify({
-        'status': 'running' if monitor.running else 'stopped',
-        'monitored_pairs': len(monitor.monitored_pairs),
-        'timeframes': monitor.timeframes,
-        'cache_stats': {
-            'pattern_cache_size': len(monitor.pattern_cache),
-            'kline_cache_size': len(monitor.data_cache.kline_cache),
-            'atr_cache_size': len(monitor.data_cache.atr_cache)
-        },
-        'system_health': monitor.system_health['status'],
-        'memory_usage_mb': psutil.Process().memory_info().rss / 1024 / 1024
-    })
+    logger.info("访问主页 - 返回系统状态信息")
+    
+    try:
+        memory_usage = psutil.Process().memory_info().rss / 1024 / 1024
+        status_data = {
+            'status': 'running' if monitor.running else 'stopped',
+            'monitored_pairs': len(monitor.monitored_pairs),
+            'timeframes': monitor.timeframes,
+            'cache_stats': {
+                'pattern_cache_size': len(monitor.pattern_cache),
+                'kline_cache_size': len(monitor.data_cache.kline_cache),
+                'atr_cache_size': len(monitor.data_cache.atr_cache)
+            },
+            'system_health': monitor.system_health['status'],
+            'memory_usage_mb': memory_usage
+        }
+        
+        logger.info(f"系统状态: {status_data['status']}, 内存使用: {memory_usage:.2f}MB, 监控对数: {len(monitor.monitored_pairs)}")
+        return jsonify(status_data)
+        
+    except Exception as e:
+        logger.error(f"获取系统状态失败: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 @app.route('/status')
 def status():
     """系统状态详情"""
+    logger.info("访问系统状态详情页面")
     current_time = datetime.now()
     
     # 计算线程状态统计
@@ -2087,6 +2277,7 @@ def status():
 @app.route('/health')
 def health():
     """健康检查端点"""
+    logger.info("访问健康检查端点")
     current_time = datetime.now()
     system_status = monitor.system_health['status']
     
@@ -2123,16 +2314,28 @@ def health():
         'uptime_seconds': (current_time - monitor.system_health['start_time']).total_seconds(),
         'consecutive_errors': monitor.system_health['consecutive_errors'],
         'memory_usage_mb': psutil.Process().memory_info().rss / 1024 / 1024,
+        'environment': 'railway' if (os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT')) else 'local',
         'timestamp': current_time.isoformat()
     }
+    
+    logger.info(f"健康检查完成 - 状态: {overall_status}, 系统状态: {system_status}, 健康线程: {total_threads - unhealthy_threads}/{total_threads}")
     
     return jsonify(response_data), http_status
 
 @app.route('/cache/clear')
 def clear_cache():
     """清理缓存端点"""
+    logger.info("访问缓存清理接口")
     try:
         initial_memory = psutil.Process().memory_info().rss / 1024 / 1024
+        
+        # 记录清理前的缓存状态
+        before_kline = len(monitor.data_cache.kline_cache)
+        before_atr = len(monitor.data_cache.atr_cache)
+        before_pattern = len(monitor.pattern_cache)
+        
+        logger.info(f"清理前缓存状态 - K线缓存: {before_kline}, ATR缓存: {before_atr}, 模式缓存: {before_pattern}")
+        logger.info(f"清理前内存使用: {initial_memory:.2f} MB")
         
         monitor.data_cache.clear_all()
         monitor.pattern_cache.clear()
@@ -2141,13 +2344,21 @@ def clear_cache():
         final_memory = psutil.Process().memory_info().rss / 1024 / 1024
         memory_freed = initial_memory - final_memory
         
+        logger.info(f"缓存清理完成 - 释放内存: {memory_freed:.2f} MB, 当前内存: {final_memory:.2f} MB")
+        
         return jsonify({
             'success': True,
             'message': 'Cache cleared successfully',
             'memory_freed_mb': memory_freed,
-            'current_memory_mb': final_memory
+            'current_memory_mb': final_memory,
+            'cleared_items': {
+                'kline_cache': before_kline,
+                'atr_cache': before_atr,
+                'pattern_cache': before_pattern
+            }
         })
     except Exception as e:
+        logger.error(f"清理缓存失败: {str(e)}")
         return jsonify({
             'success': False,
             'error': str(e)

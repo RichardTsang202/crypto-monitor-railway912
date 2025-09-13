@@ -265,11 +265,29 @@ class CryptoPatternMonitor:
         
         # 这里可以从API获取所有USDT交易对，然后过滤黑名单
         # 为了演示，使用一些常见的交易对
-        pairs = [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'ADAUSDT', 'XRPUSDT',
-            'SOLUSDT', 'DOTUSDT', 'DOGEUSDT', 'AVAXUSDT', 'SHIBUSDT',
-            'MATICUSDT', 'LTCUSDT', 'UNIUSDT', 'LINKUSDT', 'ATOMUSDT'
-        ]
+        pairs  = [
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+    'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'AVAXUSDT', 'TONUSDT',
+    'LINKUSDT', 'DOTUSDT', 'POLUSDT', 'ICPUSDT', 'NEARUSDT',
+    'UNIUSDT', 'LTCUSDT', 'APTUSDT', 'FILUSDT', 'ETCUSDT',
+    'ATOMUSDT', 'HBARUSDT', 'BCHUSDT', 'INJUSDT', 'SUIUSDT',
+    'ARBUSDT', 'OPUSDT', 'FTMUSDT', 'IMXUSDT', 'STRKUSDT',
+    'MANAUSDT', 'VETUSDT', 'ALGOUSDT', 'GRTUSDT', 'SANDUSDT',
+    'AXSUSDT', 'FLOWUSDT', 'THETAUSDT', 'CHZUSDT', 'APEUSDT',
+    'MKRUSDT', 'AAVEUSDT', 'SNXUSDT', 'QNTUSDT',
+    'GALAUSDT', 'ROSEUSDT', 'KLAYUSDT', 'ENJUSDT', 'RUNEUSDT',
+    'WIFUSDT', 'BONKUSDT', 'FLOKIUSDT', 'NOTUSDT',
+    'PEOPLEUSDT', 'JUPUSDT', 'WLDUSDT', 'ORDIUSDT', 'SEIUSDT',
+    'TIAUSDT', 'RENDERUSDT', 'FETUSDT', 'ARKMUSDT',
+    'PENGUUSDT', 'PNUTUSDT', 'ACTUSDT', 'NEIROUSDT',
+    'RAYUSDT', 'BOMEUSDT', 'MEMEUSDT', 'MOVEUSDT',
+    'EIGENUSDT', 'DYDXUSDT', 'TURBOUSDT','PYTHUSDT', 'JASMYUSDT', 'COMPUSDT', 'CRVUSDT', 'LRCUSDT',
+    'SUSHIUSDT', 'SUSDT', 'YGGUSDT', 'CAKEUSDT', 'OGUSDT',
+    'STORJUSDT', 'KNCUSDT', 'LENDUSDT', 'YFIUSDT', 'FORMUSDT',
+    'ZRXUSDT', 'XLMUSDT', 'XMRUSDT', 'XTZUSDT','BAKEUSDT',
+     'DOLOUSDT', 'SOMIUSDT', 'TRUMPUSDT', 'ONDOUSDT',
+    'NMRUSDT', 'BBUSDT',  'ZECUSDT'
+]
         
         # 过滤黑名单
         filtered_pairs = [pair for pair in pairs if pair not in blacklist]
@@ -1706,19 +1724,32 @@ class CryptoPatternMonitor:
                 current_time = datetime.now()
                 should_analyze = False
                 
+                # 记录当前时间状态（每分钟记录一次，避免日志过多）
+                if current_time.second == 0:
+                    logger.debug(f"[{timeframe}] 监控检查 - 当前时间: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                
                 # 根据时间粒度确定是否应该分析（增加容错时间窗口）
                 if timeframe == '1h':
-                    # 每个小时的前3分钟内（容错机制）
-                    if current_time.minute <= 2:
+                    # 每个小时的前5分钟内（容错机制）
+                    if current_time.minute <= 4:
                         should_analyze = True
+                        logger.info(f"[{timeframe}] ✓ 触发条件满足 - 整点后{current_time.minute}分钟 (≤4分钟)")
+                    elif current_time.second == 0:  # 只在整秒时记录，避免日志过多
+                        logger.debug(f"[{timeframe}] - 等待触发 - 当前{current_time.minute}分钟 (需要≤4分钟)")
                 elif timeframe == '4h':
                     # 能被4整除的整点延迟30-33分钟内（容错机制）
                     if current_time.hour % 4 == 0 and 30 <= current_time.minute <= 33:
                         should_analyze = True
+                        logger.info(f"[{timeframe}] ✓ 触发条件满足 - {current_time.hour}点{current_time.minute}分 (4小时整点+30-33分钟)")
+                    elif current_time.second == 0:
+                        logger.debug(f"[{timeframe}] - 等待触发 - {current_time.hour}点{current_time.minute}分 (需要4小时整点+30-33分钟)")
                 elif timeframe == '1d':
                     # 每天早上8点15-18分内（容错机制）
                     if current_time.hour == 8 and 15 <= current_time.minute <= 18:
                         should_analyze = True
+                        logger.info(f"[{timeframe}] ✓ 触发条件满足 - 8点{current_time.minute}分 (8点15-18分)")
+                    elif current_time.second == 0:
+                        logger.debug(f"[{timeframe}] - 等待触发 - {current_time.hour}点{current_time.minute}分 (需要8点15-18分)")
                 
                 # 防重复分析检查
                 if should_analyze:
@@ -1730,12 +1761,22 @@ class CryptoPatternMonitor:
                     elif timeframe == '1d':
                         analysis_key = f"{timeframe}_{current_time.strftime('%Y%m%d')}"
                     
+                    logger.debug(f"[{timeframe}] 检查重复分析 - 分析键: {analysis_key}")
+                    
                     # 检查是否已经分析过
                     if analysis_key not in self.last_analysis_time:
                         self.last_analysis_time[analysis_key] = current_time
-                        logger.info(f"开始分析 {timeframe} 时间粒度 - 触发时间: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                        logger.info(f"[{timeframe}] 🚀 开始执行分析 - 触发时间: {current_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                        
+                        analysis_start_time = datetime.now()
                         try:
-                            self._analyze_all_pairs(timeframe)
+                            result = self._analyze_all_pairs(timeframe)
+                            analysis_end_time = datetime.now()
+                            analysis_duration = (analysis_end_time - analysis_start_time).total_seconds()
+                            
+                            logger.info(f"[{timeframe}] ✅ 分析执行成功 - 总耗时: {analysis_duration:.2f}秒")
+                            logger.info(f"[{timeframe}] 📊 分析结果: 成功率 {result.get('success_rate', 0):.1f}%, 形态发现 {len(result.get('patterns_found', []))}个")
+                            
                             consecutive_errors = 0  # 成功后重置错误计数
                             self._update_system_health('healthy')
                             
@@ -1744,7 +1785,10 @@ class CryptoPatternMonitor:
                                 self.thread_health[timeframe]['status'] = 'running'
                                 self.thread_health[timeframe]['error_count'] = 0
                         except Exception as e:
-                            logger.error(f"{timeframe} 分析执行失败: {str(e)}")
+                            analysis_end_time = datetime.now()
+                            analysis_duration = (analysis_end_time - analysis_start_time).total_seconds()
+                            
+                            logger.error(f"[{timeframe}] ❌ 分析执行失败 - 耗时: {analysis_duration:.2f}秒, 错误: {str(e)}")
                             consecutive_errors += 1
                             self._update_system_health('error', e)
                             
@@ -1753,16 +1797,17 @@ class CryptoPatternMonitor:
                                 self.thread_health[timeframe]['status'] = 'error'
                                 self.thread_health[timeframe]['error_count'] += 1
                                 self.thread_health[timeframe]['last_error'] = str(e)
-                            
-                            # 如果连续错误过多，增加恢复延迟
-                            if consecutive_errors >= max_consecutive_errors:
-                                delay_index = min(consecutive_errors - max_consecutive_errors, len(error_backoff_delays) - 1)
-                                recovery_delay = error_backoff_delays[delay_index]
-                                logger.warning(f"{timeframe} 连续错误 {consecutive_errors} 次，延迟 {recovery_delay} 秒后继续")
-                                time.sleep(recovery_delay)
                     else:
-                        # 已经分析过，跳过
-                        should_analyze = False
+                        last_analysis_time = self.last_analysis_time[analysis_key]
+                        time_since_last = (current_time - last_analysis_time).total_seconds()
+                        logger.debug(f"[{timeframe}] ⏭ 跳过重复分析 - 上次分析: {last_analysis_time.strftime('%H:%M:%S')} ({time_since_last:.0f}秒前)")
+                
+                # 如果连续错误过多，增加恢复延迟
+                if consecutive_errors >= max_consecutive_errors:
+                    delay_index = min(consecutive_errors - max_consecutive_errors, len(error_backoff_delays) - 1)
+                    recovery_delay = error_backoff_delays[delay_index]
+                    logger.warning(f"{timeframe} 连续错误 {consecutive_errors} 次，延迟 {recovery_delay} 秒后继续")
+                    time.sleep(recovery_delay)
                 
                 # 动态调整检查间隔
                 check_interval = 60  # 默认60秒
@@ -1858,16 +1903,24 @@ class CryptoPatternMonitor:
     
     def _analyze_all_pairs(self, timeframe: str):
         """分析所有交易对，支持容错机制"""
-        logger.info(f"开始分析 {timeframe} 时间粒度的所有交易对")
+        start_time = datetime.now()
+        logger.info(f"========== 开始分析 {timeframe} 时间粒度的所有交易对 ========== [{start_time.strftime('%Y-%m-%d %H:%M:%S')}]")
         
         total_pairs = len(self.monitored_pairs)
         success_count = 0
         failed_pairs = []
         webhook_failures = []
+        patterns_found = []
+        
+        logger.info(f"监控交易对数量: {total_pairs}")
+        logger.info(f"交易对列表: {', '.join(self.monitored_pairs)}")
+        logger.info(f"预计总耗时: {total_pairs * (3 if timeframe == '1h' else 5 if timeframe == '4h' else 10)} 秒")
         
         for i, symbol in enumerate(self.monitored_pairs):
             try:
-                logger.debug(f"分析进度: {i+1}/{total_pairs} - {symbol}")
+                pair_start_time = datetime.now()
+                progress_percent = ((i + 1) / total_pairs) * 100
+                logger.info(f"[{i+1}/{total_pairs}] ({progress_percent:.1f}%) 开始分析 {symbol} - {pair_start_time.strftime('%H:%M:%S')}")
                 
                 # 分析形态
                 pattern_result = None
@@ -1888,8 +1941,12 @@ class CryptoPatternMonitor:
                 
                 if pattern_result:
                     pattern_type = pattern_result['pattern_type']
+                    confidence = pattern_result.get('confidence', 'N/A')
+                    logger.info(f"  ✓ {symbol} 检测到形态: {pattern_type} (置信度: {confidence})")
+                    patterns_found.append(f"{symbol}_{pattern_type}")
                     
                     if self._should_send_signal(symbol, timeframe, pattern_type):
+                        logger.info(f"  → {symbol} 满足发送条件，准备发送信号")
                         # Webhook发送重试机制
                         webhook_success = False
                         webhook_retry_count = 0
@@ -1899,13 +1956,13 @@ class CryptoPatternMonitor:
                             try:
                                 webhook_success = self._send_webhook(pattern_result)
                                 if webhook_success:
-                                    logger.info(f"形态信号已发送: {symbol} {timeframe} {pattern_type}")
+                                    logger.info(f"  ✓ {symbol} Webhook发送成功: {pattern_type}")
                                     break
                                 else:
                                     webhook_retry_count += 1
                                     if webhook_retry_count <= max_webhook_retries:
-                                        logger.warning(f"Webhook发送失败，重试 {webhook_retry_count}/{max_webhook_retries}: {symbol}")
-                                        time.sleep(2)  # Webhook重试间隔
+                                        logger.warning(f"  ⚠ {symbol} Webhook发送失败，重试 {webhook_retry_count}/{max_webhook_retries}")
+                                    time.sleep(2)  # Webhook重试间隔
                             except Exception as e:
                                 webhook_retry_count += 1
                                 if webhook_retry_count <= max_webhook_retries:
@@ -1919,7 +1976,16 @@ class CryptoPatternMonitor:
                         try:
                             self._update_pattern_cache(symbol, timeframe)
                         except Exception as e:
-                            logger.warning(f"更新 {symbol} 形态缓存失败: {str(e)}")
+                            logger.warning(f"  ⚠ 更新 {symbol} 形态缓存失败: {str(e)}")
+                    else:
+                        logger.debug(f"  - {symbol} 不满足发送条件，跳过信号发送")
+                else:
+                    logger.debug(f"  - {symbol} 未检测到形态")
+                
+                # 计算单个交易对分析耗时
+                pair_end_time = datetime.now()
+                pair_duration = (pair_end_time - pair_start_time).total_seconds()
+                logger.info(f"  ✓ {symbol} 分析完成，耗时: {pair_duration:.2f}秒")
                 
                 success_count += 1
                 
@@ -1932,25 +1998,35 @@ class CryptoPatternMonitor:
                     time.sleep(10)
                     
             except Exception as e:
-                logger.error(f"分析 {symbol} {timeframe} 时出错: {str(e)}")
+                pair_end_time = datetime.now()
+                pair_duration = (pair_end_time - pair_start_time).total_seconds()
+                logger.error(f"  ✗ {symbol} 分析失败，耗时: {pair_duration:.2f}秒，错误: {str(e)}")
                 failed_pairs.append(symbol)
                 continue
         
         # 分析完成统计
+        end_time = datetime.now()
+        total_duration = (end_time - start_time).total_seconds()
         failed_count = len(failed_pairs)
         success_rate = (success_count / total_pairs) * 100 if total_pairs > 0 else 0
+        patterns_count = len(patterns_found)
         
-        logger.info(f"{timeframe} 分析完成: 成功 {success_count}/{total_pairs} ({success_rate:.1f}%)")
+        logger.info(f"========== {timeframe} 分析完成 ========== [{end_time.strftime('%Y-%m-%d %H:%M:%S')}]")
+        logger.info(f"总耗时: {total_duration:.2f}秒 (平均每个: {total_duration/total_pairs:.2f}秒)")
+        logger.info(f"成功率: {success_count}/{total_pairs} ({success_rate:.1f}%)")
+        logger.info(f"形态发现: {patterns_count}个 - {', '.join(patterns_found) if patterns_found else '无'}")
         
         if failed_pairs:
-            logger.warning(f"{timeframe} 失败的交易对: {', '.join(failed_pairs)}")
+            logger.warning(f"失败的交易对 ({failed_count}个): {', '.join(failed_pairs)}")
         
         if webhook_failures:
-            logger.warning(f"{timeframe} Webhook发送失败: {', '.join(webhook_failures)}")
+            logger.warning(f"Webhook发送失败 ({len(webhook_failures)}个): {', '.join(webhook_failures)}")
         
         # 如果失败率过高，记录警告
         if failed_count > total_pairs * 0.3:  # 失败率超过30%
-            logger.error(f"{timeframe} 分析失败率过高: {failed_count}/{total_pairs} ({(failed_count/total_pairs)*100:.1f}%)")
+            logger.error(f"⚠ {timeframe} 分析失败率过高: {failed_count}/{total_pairs} ({(failed_count/total_pairs)*100:.1f}%)")
+        
+        logger.info(f"========== {timeframe} 分析结束 ==========\n")
             
         return {
             'total': total_pairs,
@@ -1958,6 +2034,7 @@ class CryptoPatternMonitor:
             'failed': failed_count,
             'failed_pairs': failed_pairs,
             'webhook_failures': webhook_failures,
+            'patterns_found': patterns_found,
             'success_rate': success_rate
         }
     

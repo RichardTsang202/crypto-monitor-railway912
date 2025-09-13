@@ -1664,9 +1664,32 @@ class CryptoPatternMonitor:
                     'description': kline_pattern.get('description', '无形态')
                 }
                 
-                # 添加B点收盘价字段
+                # 添加B点收盘价字段和相关标识信息
                 if 'point_b' in pattern_data:
-                    webhook_data['b_point_close_price'] = pattern_data['point_b']['price']
+                    point_b = pattern_data['point_b']
+                    webhook_data['b_point_close_price'] = point_b['price']
+                    webhook_data['b_point_timestamp'] = point_b['timestamp']
+                    webhook_data['b_point_type'] = point_b.get('point_type', 'unknown')
+                    
+                    # 添加B点相关的标识信息
+                    webhook_data['pattern_identification'] = {
+                        'pattern_id': f"{symbol}_{pattern_type}_{timeframe}_{int(datetime.now().timestamp())}",
+                        'detection_time': datetime.now().isoformat(),
+                        'b_point_details': {
+                            'price': point_b['price'],
+                            'timestamp': point_b['timestamp'],
+                            'datetime': datetime.fromtimestamp(point_b['timestamp'] / 1000).isoformat() if point_b['timestamp'] > 1000000000000 else datetime.fromtimestamp(point_b['timestamp']).isoformat(),
+                            'point_type': point_b.get('point_type', 'unknown')
+                        }
+                    }
+                else:
+                    logger.warning(f"B点数据缺失 - {symbol} {pattern_type}")
+                    webhook_data['b_point_close_price'] = None
+                    webhook_data['pattern_identification'] = {
+                        'pattern_id': f"{symbol}_{pattern_type}_{timeframe}_{int(datetime.now().timestamp())}",
+                        'detection_time': datetime.now().isoformat(),
+                        'b_point_details': None
+                    }
                 
                 # 添加背离分析
                 divergence_data = pattern_data.get('divergence', {})
@@ -1674,8 +1697,16 @@ class CryptoPatternMonitor:
                 webhook_data['rsi_divergence'] = divergence_data.get('rsi_divergence', False)
                 webhook_data['volume_divergence'] = divergence_data.get('volume_divergence', False)
                 
+                # 记录B点收盘价信息
+                b_price = webhook_data.get('b_point_close_price')
+                if b_price:
+                    logger.info(f"📊 B点收盘价: {b_price} - {symbol} {pattern_type} ({timeframe})")
+                else:
+                    logger.warning(f"⚠️ B点收盘价缺失 - {symbol} {pattern_type} ({timeframe})")
+                
                 # 发送请求
                 logger.debug(f"发送Webhook请求到: {self.webhook_url}")
+                logger.debug(f"Webhook数据包含字段: {list(webhook_data.keys())}")
                 response = requests.post(
                     self.webhook_url,
                     json=webhook_data,
@@ -1912,17 +1943,6 @@ class CryptoPatternMonitor:
         
         logger.info(f"[{timeframe}] 监控线程已启动，开始运行循环")
         
-        # 启动时立即执行一次分析
-        logger.info(f"启动时立即分析 {timeframe}")
-        try:
-            self._analyze_all_pairs_sequential(timeframe)
-            consecutive_errors = 0
-            self._update_system_health('healthy')
-        except Exception as e:
-            logger.error(f"{timeframe} 启动分析失败: {str(e)}")
-            consecutive_errors += 1
-            self._update_system_health('error', e)
-        
         while self.running:
             try:
                 cycle_count += 1
@@ -2136,11 +2156,21 @@ def start_monitoring_on_startup():
             import threading
             def start_monitor_only():
                 try:
+                    # 双重检查，防止重复启动
+                    if monitor.running:
+                        logger.warning("监控系统已在运行，跳过重复启动")
+                        return
+                        
                     monitor.running = True
                     monitor._update_system_health('starting')
                     
                     # 启动各时间粒度的监控线程
                     for timeframe in monitor.timeframes:
+                        # 检查线程是否已存在
+                        if timeframe in monitor.monitor_threads and monitor.monitor_threads[timeframe].is_alive():
+                            logger.warning(f"{timeframe} 监控线程已存在，跳过启动")
+                            continue
+                            
                         thread = threading.Thread(
                             target=monitor._monitor_timeframe,
                             args=(timeframe,),
@@ -2177,6 +2207,8 @@ def start_monitoring_on_startup():
             
             monitor_thread = threading.Thread(target=start_monitor_only, daemon=True)
             monitor_thread.start()
+        else:
+            logger.info("非Railway环境，跳过自动启动监控")
 
 # 使用应用上下文启动监控
 with app.app_context():
@@ -2372,7 +2404,17 @@ def main():
     """主函数"""
     try:
         logger.info("初始化加密货币形态识别监控系统")
-        monitor.start_monitoring()
+        # 检查是否为Railway环境，如果是则不重复启动监控（已在start_monitoring_on_startup中启动）
+        is_railway = os.environ.get('RAILWAY_ENVIRONMENT') or os.environ.get('PORT')
+        if not is_railway:
+            logger.info("本地环境，启动监控系统")
+            monitor.start_monitoring()
+        else:
+            logger.info("Railway环境，监控系统已在应用启动时自动启动")
+            # 保持主线程运行
+            import time
+            while True:
+                time.sleep(60)
     except KeyboardInterrupt:
         logger.info("接收到停止信号")
         monitor.stop_monitoring()

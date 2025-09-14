@@ -568,11 +568,11 @@ class CryptoPatternMonitor:
             next_kline = klines[i + 1]
             
             timestamp = int(current[0])
-            high = current[2]
-            low = current[3]
+            high = float(current[2])  # 确保为浮点数
+            low = float(current[3])   # 确保为浮点数
             
             # 检测高点
-            if high > prev[2] and high > next_kline[2]:
+            if high > float(prev[2]) and high > float(next_kline[2]):
                 extreme_points.append(ExtremePoint(
                     timestamp=timestamp,
                     price=high,
@@ -580,7 +580,7 @@ class CryptoPatternMonitor:
                 ))
             
             # 检测低点
-            if low < prev[3] and low < next_kline[3]:
+            if low < float(prev[3]) and low < float(next_kline[3]):
                 extreme_points.append(ExtremePoint(
                     timestamp=timestamp,
                     price=low,
@@ -650,8 +650,8 @@ class CryptoPatternMonitor:
             max_high = float('-inf')
             max_high_timestamp = None
             for kline in a_range_klines:
-                if kline[2] > max_high:
-                    max_high = kline[2]
+                if float(kline[2]) > max_high:
+                    max_high = float(kline[2])  # 修复：确保价格为浮点数
                     max_high_timestamp = int(kline[0])
             
             cache.a_point = ExtremePoint(max_high_timestamp, max_high, 'high')
@@ -664,8 +664,8 @@ class CryptoPatternMonitor:
             min_low = float('inf')
             min_low_timestamp = None
             for kline in a_range_klines:
-                if kline[3] < min_low:
-                    min_low = kline[3]
+                if float(kline[3]) < min_low:
+                    min_low = float(kline[3])  # 修复：确保价格为浮点数
                     min_low_timestamp = int(kline[0])
             
             cache.a_point = ExtremePoint(min_low_timestamp, min_low, 'low')
@@ -678,8 +678,8 @@ class CryptoPatternMonitor:
             max_high = float('-inf')
             max_high_timestamp = None
             for kline in a_range_klines:
-                if kline[2] > max_high:
-                    max_high = kline[2]
+                if float(kline[2]) > max_high:
+                    max_high = float(kline[2])  # 修复：确保价格为浮点数
                     max_high_timestamp = int(kline[0])
             
             cache.a_point = ExtremePoint(max_high_timestamp, max_high, 'high')
@@ -690,8 +690,8 @@ class CryptoPatternMonitor:
             max_high_d = float('-inf')
             max_high_d_timestamp = None
             for kline in d_range_klines:
-                if kline[2] > max_high_d:
-                    max_high_d = kline[2]
+                if float(kline[2]) > max_high_d:
+                    max_high_d = float(kline[2])  # 修复：确保价格为浮点数
                     max_high_d_timestamp = int(kline[0])
             
             cache.d_point = ExtremePoint(max_high_d_timestamp, max_high_d, 'high')
@@ -703,8 +703,8 @@ class CryptoPatternMonitor:
             min_low = float('inf')
             min_low_timestamp = None
             for kline in a_range_klines:
-                if kline[3] < min_low:
-                    min_low = kline[3]
+                if float(kline[3]) < min_low:
+                    min_low = float(kline[3])  # 修复：确保价格为浮点数
                     min_low_timestamp = int(kline[0])
             
             cache.a_point = ExtremePoint(min_low_timestamp, min_low, 'low')
@@ -715,8 +715,8 @@ class CryptoPatternMonitor:
             min_low_d = float('inf')
             min_low_d_timestamp = None
             for kline in d_range_klines:
-                if kline[3] < min_low_d:
-                    min_low_d = kline[3]
+                if float(kline[3]) < min_low_d:
+                    min_low_d = float(kline[3])  # 修复：确保价格为浮点数
                     min_low_d_timestamp = int(kline[0])
             
             cache.d_point = ExtremePoint(min_low_d_timestamp, min_low_d, 'low')
@@ -728,6 +728,7 @@ class CryptoPatternMonitor:
         
         # 检查点是否还在K线数据的有效范围内
         for i, kline in enumerate(klines):
+            # 修复类型转换：确保时间戳比较时类型一致
             if int(kline[0]) == point.timestamp:
                 position_from_right = len(klines) - 1 - i
                 # A点应该在第13-34根范围内
@@ -750,9 +751,9 @@ class CryptoPatternMonitor:
             current = klines[i]
             previous = klines[i - 1]
             
-            high = current[2]
-            low = current[3]
-            prev_close = previous[4]
+            high = float(current[2])      # 确保为浮点数
+            low = float(current[3])       # 确保为浮点数
+            prev_close = float(previous[4])  # 确保为浮点数
             
             tr1 = high - low
             tr2 = abs(high - prev_close)
@@ -801,7 +802,7 @@ class CryptoPatternMonitor:
         for kline in klines:
             kline_time = int(kline[0])
             if start_time < kline_time < end_time:
-                price = kline[3] if find_type == 'low' else kline[2]  # low or high
+                price = float(kline[3]) if find_type == 'low' else float(kline[2])  # low or high，确保为浮点数
                 
                 if find_type == 'low' and price < extreme_price:
                     extreme_price = price
@@ -846,7 +847,7 @@ class CryptoPatternMonitor:
         previous_kline = klines[-2]
         point_b = ExtremePoint(
             timestamp=int(previous_kline[0]),
-            price=previous_kline[2],
+            price=float(previous_kline[2]),  # 修复：转换为浮点数
             point_type='high'
         )
         
@@ -915,7 +916,7 @@ class CryptoPatternMonitor:
         previous_kline = klines[-2]
         point_b = ExtremePoint(
             timestamp=int(previous_kline[0]),
-            price=previous_kline[3],
+            price=float(previous_kline[3]),  # 修复：转换为浮点数
             point_type='low'
         )
         
@@ -981,7 +982,7 @@ class CryptoPatternMonitor:
         previous_kline = klines[-2]
         point_b = ExtremePoint(
             timestamp=int(previous_kline[0]),
-            price=previous_kline[2],
+            price=float(previous_kline[2]),  # 修复：转换为浮点数
             point_type='high'
         )
         
@@ -1057,7 +1058,7 @@ class CryptoPatternMonitor:
         previous_kline = klines[-2]
         point_b = ExtremePoint(
             timestamp=int(previous_kline[0]),
-            price=previous_kline[3],
+            price=float(previous_kline[3]),  # 修复：转换为浮点数
             point_type='low'
         )
         
@@ -1111,7 +1112,7 @@ class CryptoPatternMonitor:
             return {}
         
         # 提取收盘价
-        closes = [kline[4] for kline in klines]
+        closes = [float(kline[4]) for kline in klines]  # 修复：确保收盘价为浮点数
         
         # 计算EMA
         ema21 = self._calculate_ema(closes, 21)
@@ -1264,7 +1265,7 @@ class CryptoPatternMonitor:
     
     def _detect_hammer(self, candle: List) -> Dict:
         """检测锤子线形态"""
-        open_price, high, low, close = candle[1], candle[2], candle[3], candle[4]
+        open_price, high, low, close = float(candle[1]), float(candle[2]), float(candle[3]), float(candle[4])
         
         body = abs(close - open_price)
         upper_shadow = high - max(close, open_price)
@@ -1293,8 +1294,8 @@ class CryptoPatternMonitor:
     
     def _detect_engulfing(self, prev_candle: List, current_candle: List) -> Dict:
         """检测吞没形态"""
-        prev_open, prev_close = prev_candle[1], prev_candle[4]
-        curr_open, curr_close = current_candle[1], current_candle[4]
+        prev_open, prev_close = float(prev_candle[1]), float(prev_candle[4])
+        curr_open, curr_close = float(current_candle[1]), float(current_candle[4])
         
         prev_body = abs(prev_close - prev_open)
         curr_body = abs(curr_close - curr_open)
@@ -1334,7 +1335,7 @@ class CryptoPatternMonitor:
     
     def _detect_doji(self, candle: List) -> Dict:
         """检测十字星形态"""
-        open_price, high, low, close = candle[1], candle[2], candle[3], candle[4]
+        open_price, high, low, close = float(candle[1]), float(candle[2]), float(candle[3]), float(candle[4])
         
         body = abs(close - open_price)
         total_range = high - low
@@ -1450,7 +1451,8 @@ class CryptoPatternMonitor:
     def _find_kline_index_by_timestamp(self, klines: List[List], timestamp: int) -> int:
         """根据时间戳找到K线在数组中的索引"""
         for i, kline in enumerate(klines):
-            if kline[0] == timestamp:
+            # 修复类型转换：确保时间戳比较时类型一致
+            if int(kline[0]) == timestamp:
                 return i
         return -1
     
@@ -1459,7 +1461,7 @@ class CryptoPatternMonitor:
         if len(klines) < 26:  # MACD需要至少26根K线
             return False
         
-        closes = [kline[4] for kline in klines]
+        closes = [float(kline[4]) for kline in klines]  # 修复：确保收盘价为浮点数
         
         # 计算整个区间的MACD
         macd_values = []
@@ -1491,7 +1493,7 @@ class CryptoPatternMonitor:
         if len(klines) < 14:  # RSI需要至少14根K线
             return False
         
-        closes = [kline[4] for kline in klines]
+        closes = [float(kline[4]) for kline in klines]  # 修复：确保收盘价为浮点数
         
         # 计算C点和B点的RSI
         c_rsi = self._calculate_rsi(closes[:len(closes)//2]) if len(closes) >= 28 else self._calculate_rsi(closes[:14])
@@ -1515,7 +1517,7 @@ class CryptoPatternMonitor:
         if len(klines) < 2:
             return False
         
-        volumes = [kline[5] for kline in klines]
+        volumes = [float(kline[5]) for kline in klines]  # 修复：确保成交量为浮点数
         
         # 计算平均成交量
         c_volume_avg = sum(volumes[:len(volumes)//2]) / (len(volumes)//2) if len(volumes) >= 4 else volumes[0]
@@ -1667,17 +1669,30 @@ class CryptoPatternMonitor:
                 # 添加B点收盘价字段和相关标识信息
                 if 'point_b' in pattern_data:
                     point_b = pattern_data['point_b']
-                    # 确保时间戳为整数类型
-                    b_timestamp = int(point_b['timestamp']) if isinstance(point_b['timestamp'], (str, float)) else point_b['timestamp']
+                    # 智能处理时间戳类型转换
+                    timestamp_value = point_b['timestamp']
+                    if isinstance(timestamp_value, str):
+                        # 如果是ISO格式的datetime字符串，先转换为datetime对象再获取时间戳
+                        if 'T' in timestamp_value or '-' in timestamp_value:
+                            try:
+                                dt = datetime.fromisoformat(timestamp_value.replace('Z', '+00:00'))
+                                b_timestamp = int(dt.timestamp() * 1000)  # 转换为毫秒时间戳
+                            except ValueError:
+                                # 如果不是有效的datetime字符串，尝试直接转换为数字
+                                b_timestamp = int(float(timestamp_value))
+                        else:
+                            # 纯数字字符串，直接转换
+                            b_timestamp = int(float(timestamp_value))
+                    elif isinstance(timestamp_value, float):
+                        b_timestamp = int(timestamp_value)
+                    else:
+                        b_timestamp = timestamp_value
                     
                     webhook_data['b_point_close_price'] = point_b['price']
                     webhook_data['b_point_timestamp'] = b_timestamp
                     webhook_data['b_point_type'] = point_b.get('point_type', 'unknown')
                     
                     # 添加B点相关的标识信息
-                    # 确保时间戳为整数类型
-                    b_timestamp = int(point_b['timestamp']) if isinstance(point_b['timestamp'], (str, float)) else point_b['timestamp']
-                    
                     webhook_data['pattern_identification'] = {
                         'pattern_id': f"{symbol}_{pattern_type}_{timeframe}_{int(datetime.now().timestamp())}",
                         'detection_time': datetime.now().isoformat(),

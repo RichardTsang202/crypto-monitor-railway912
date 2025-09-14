@@ -1667,18 +1667,24 @@ class CryptoPatternMonitor:
                 # 添加B点收盘价字段和相关标识信息
                 if 'point_b' in pattern_data:
                     point_b = pattern_data['point_b']
+                    # 确保时间戳为整数类型
+                    b_timestamp = int(point_b['timestamp']) if isinstance(point_b['timestamp'], (str, float)) else point_b['timestamp']
+                    
                     webhook_data['b_point_close_price'] = point_b['price']
-                    webhook_data['b_point_timestamp'] = point_b['timestamp']
+                    webhook_data['b_point_timestamp'] = b_timestamp
                     webhook_data['b_point_type'] = point_b.get('point_type', 'unknown')
                     
                     # 添加B点相关的标识信息
+                    # 确保时间戳为整数类型
+                    b_timestamp = int(point_b['timestamp']) if isinstance(point_b['timestamp'], (str, float)) else point_b['timestamp']
+                    
                     webhook_data['pattern_identification'] = {
                         'pattern_id': f"{symbol}_{pattern_type}_{timeframe}_{int(datetime.now().timestamp())}",
                         'detection_time': datetime.now().isoformat(),
                         'b_point_details': {
                             'price': point_b['price'],
-                            'timestamp': point_b['timestamp'],
-                            'datetime': datetime.fromtimestamp(point_b['timestamp'] / 1000).isoformat() if point_b['timestamp'] > 1000000000000 else datetime.fromtimestamp(point_b['timestamp']).isoformat(),
+                            'timestamp': b_timestamp,
+                            'datetime': datetime.fromtimestamp(b_timestamp / 1000).isoformat() if b_timestamp > 1000000000000 else datetime.fromtimestamp(b_timestamp).isoformat(),
                             'point_type': point_b.get('point_type', 'unknown')
                         }
                     }

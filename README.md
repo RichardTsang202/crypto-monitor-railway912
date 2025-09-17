@@ -1,15 +1,15 @@
 # 加密货币形态识别监控系统 - Railway部署版
 
-这是一个专门用于识别加密货币市场中双顶、双底、头肩顶、头肩底四种经典形态的实时监控系统，采用极值点缓存策略，支持多时间粒度监控。
+这是一个专门用于识别加密货币市场中双顶、双底、EMA趋势等形态的实时监控系统，采用极值点缓存策略，支持多时间粒度监控，并通过Telegram发送实时通知和K线图表。
 
 ## 功能特性
 
 ### 核心功能
-- **四种形态识别**：双顶、双底、头肩顶、头肩底
+- **多种形态识别**：双顶、双底、EMA趋势信号
 - **多时间粒度监控**：1小时、4小时、1日
 - **极值点缓存策略**：高效的数据处理和形态识别
 - **实时监控**：基于时间触发的智能监控
-- **Webhook通知**：形态识别后自动发送通知
+- **Telegram通知**：形态识别后自动发送通知和K线图表
 
 ### 技术特性
 - **多API源支持**：Binance、OKX API自动切换
@@ -178,15 +178,44 @@ git push -u origin main
 
 ## 故障排除
 
+## 部署到Railway
+
+### 1. 准备Telegram Bot
+
+1. 在Telegram中找到 @BotFather
+2. 发送 `/newbot` 创建新机器人
+3. 获取Bot Token
+4. 创建频道并将Bot添加为管理员
+5. 获取频道ID（可以通过 @userinfobot 获取）
+
+### 2. 部署到Railway
+
+1. Fork这个仓库到你的GitHub账户
+2. 在 [Railway](https://railway.app) 创建新项目
+3. 连接你的GitHub仓库
+4. 设置环境变量：
+   - `TELEGRAM_BOT_TOKEN`: 你的Telegram Bot Token
+   - `TELEGRAM_CHANNEL_ID`: 你的Telegram频道ID
+
+### 3. 环境变量配置
+
+在Railway项目设置中添加环境变量：
+
+```
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
+TELEGRAM_CHANNEL_ID=-1001234567890
+```
+
 ### 常见问题
 
 1. **API请求失败**
    - 系统会自动切换API源
    - 检查网络连接和API限制
 
-2. **Webhook发送失败**
-   - 检查webhook URL是否正确
-   - 确认目标服务器可访问
+2. **Telegram发送失败**
+   - 检查Bot Token是否正确
+   - 确认Bot已添加到频道并有发送权限
+   - 频道ID必须是负数格式
 
 3. **内存不足**
    - Railway免费计划有内存限制
@@ -200,9 +229,12 @@ git push -u origin main
 - **Python 3.11**
 - **Flask** - Web框架
 - **Gunicorn** - WSGI服务器
-- **NumPy/Pandas** - 数据处理
+- **NumPy** - 数据处理
+- **Matplotlib/mplfinance** - 图表生成
+- **python-telegram-bot** - Telegram集成
 - **Requests** - HTTP客户端
 - **Threading** - 并发处理
+- **Pillow** - 图像处理
 
 ## 许可证
 

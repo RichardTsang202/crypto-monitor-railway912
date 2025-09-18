@@ -251,12 +251,23 @@ class CryptoPatternMonitor:
             env_keys = list(all_env_vars.keys())[:10]
             logger.info(f"  - 前10个环境变量: {env_keys}")
         
-        # 尝试创建Telegram Bot实例
+        # 尝试创建Telegram Bot实例（优化连接池配置）
         self.telegram_bot = None
         if self.telegram_token:
             try:
-                self.telegram_bot = Bot(token=self.telegram_token)
-                logger.info("✅ Telegram Bot实例创建成功")
+                from telegram.request import HTTPXRequest
+                
+                # 创建自定义HTTP请求配置，解决连接池超时问题
+                request = HTTPXRequest(
+                    connection_pool_size=20,  # 增加连接池大小
+                    pool_timeout=60.0,        # 增加池超时时间
+                    connect_timeout=30.0,     # 连接超时
+                    read_timeout=30.0,        # 读取超时
+                    write_timeout=30.0,       # 写入超时
+                )
+                
+                self.telegram_bot = Bot(token=self.telegram_token, request=request)
+                logger.info("✅ Telegram Bot实例创建成功（已优化连接池配置）")
                 
                 # 测试Bot连接（异步调用需要在事件循环中执行）
                 try:

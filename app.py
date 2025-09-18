@@ -1644,6 +1644,14 @@ class CryptoPatternMonitor:
         if current_time - self.last_webhook_time < 10:
             return False
         
+        # 检查Telegram配置是否有效
+        telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
+        telegram_channel = os.getenv('TELEGRAM_CHANNEL_ID')
+        
+        if not telegram_token or not telegram_channel:
+            logger.debug(f"Telegram配置无效，跳过信号发送 - {symbol} {pattern_type}")
+            return False
+        
         return True
     
     def _create_chart(self, symbol: str, timeframe: str, pattern_data: Dict) -> Optional[str]:

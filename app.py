@@ -217,6 +217,7 @@ class CryptoPatternMonitor:
         self.pattern_cache = {}  # 统一的形态缓存
         self.last_analysis_time = {}  # 最后分析时间（防重复分析）
         self.last_webhook_time = 0  # 全局webhook发送时间控制
+        self.sent_signals = {}  # 已发送信号记录 {signal_key: timestamp}
         self.api_sources = self._init_api_sources()
         self.current_api_index = 0
         self.monitored_pairs = self._get_monitored_pairs()
@@ -1014,6 +1015,21 @@ class CryptoPatternMonitor:
         if ab_diff > atr_threshold:
             return None
         
+        # 验证双顶过滤条件：A_top和B_top之间不得存在高于这两个顶点的价格
+        max_ab_price = max(a_top.price, b_top.price)
+        start_time = min(a_top.timestamp, b_top.timestamp)
+        end_time = max(a_top.timestamp, b_top.timestamp)
+        
+        for kline in klines:
+            kline_time = int(kline[0])
+            if start_time < kline_time < end_time:
+                high_price = float(kline[2])  # 最高价
+                if high_price > max_ab_price:
+                    logger.info(f"双顶过滤：在A_top和B_top之间发现更高价格{high_price:.2f}，高于max(A_top,B_top)={max_ab_price:.2f}，不符合双顶定义")
+                    return None
+        
+        logger.info(f"双顶过滤通过：A_top和B_top之间无高于{max_ab_price:.2f}的价格")
+        
         # 查找C_bottom点（A_top与B_top间最低点）
         logger.info(f"现在获取A_top与B_top之间的C_bottom点")
         c_bottom = self._find_point_between(klines, a_top, b_top, 'low')
@@ -1096,6 +1112,21 @@ class CryptoPatternMonitor:
         
         if ab_diff > atr_threshold:
             return None
+        
+        # 验证双底过滤条件：A_bottom和B_bottom之间不得存在低于这两个底点的价格
+        min_ab_price = min(a_bottom.price, b_bottom.price)
+        start_time = min(a_bottom.timestamp, b_bottom.timestamp)
+        end_time = max(a_bottom.timestamp, b_bottom.timestamp)
+        
+        for kline in klines:
+            kline_time = int(kline[0])
+            if start_time < kline_time < end_time:
+                low_price = float(kline[3])  # 最低价
+                if low_price < min_ab_price:
+                    logger.info(f"双底过滤：在A_bottom和B_bottom之间发现更低价格{low_price:.2f}，低于min(A_bottom,B_bottom)={min_ab_price:.2f}，不符合双底定义")
+                    return None
+        
+        logger.info(f"双底过滤通过：A_bottom和B_bottom之间无低于{min_ab_price:.2f}的价格")
         
         # 查找C_top点（A_bottom与B_bottom间最高点）
         logger.info(f"现在获取A_bottom与B_bottom之间的C_top点")
@@ -1655,6 +1686,17 @@ class CryptoPatternMonitor:
         """检查是否应该发送信号（防止重复）"""
         current_time = time.time()
         
+        # 创建信号唯一标识
+        signal_key = f"{symbol}_{timeframe}_{pattern_type}"
+        
+        # 检查信号是否已经发送过（24小时内）
+        if signal_key in self.sent_signals:
+            last_sent_time = self.sent_signals[signal_key]
+            time_diff = current_time - last_sent_time
+            if time_diff < 86400:  # 24小时 = 86400秒
+                logger.info(f"⏭️ {signal_key} 信号已在 {time_diff/3600:.1f} 小时前发送过，跳过重复发送")
+                return False
+        
         # 检查全局webhook发送间隔（10秒）
         if current_time - self.last_webhook_time < 10:
             return False
@@ -1881,18 +1923,19 @@ class CryptoPatternMonitor:
                     img_buffer = io.BytesIO(img_data)
                     img_buffer.name = f'{symbol}_{timeframe}_{pattern_type}.png'
                     
-                    # 异步发送图片
-                    photo_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(photo_loop)
-                    try:
-                        photo_response = photo_loop.run_until_complete(self.telegram_bot.send_photo(
-                            chat_id=self.telegram_channel_id,
-                            photo=img_buffer,
-                            caption=f"{symbol} {pattern_type} 图表"
-                        ))
-                        logger.info(f"✅ 图表发送成功，消息ID: {photo_response.message_id}")
-                    finally:
-                        photo_loop.close()
+                    # 使用新的同步发送方法
+                    success = self._send_photo_sync(
+                        self.telegram_bot,
+                        self.telegram_channel_id,
+                        img_buffer,
+                        f"{symbol} {pattern_type} 图表"
+                    )
+                    
+                    if success:
+                        logger.info("✅ 图表发送成功")
+                    else:
+                        logger.error("❌ 图表发送失败")
+                    
                 except Exception as photo_error:
                     logger.error(f"❌ 图表发送失败: {str(photo_error)}")
                     # 图表发送失败不影响整体成功状态
@@ -1916,6 +1959,27 @@ class CryptoPatternMonitor:
             logger.error(f"  - Channel ID: {self.telegram_channel_id}")
             return False
     
+    def _send_photo_sync(self, bot: Bot, chat_id: str, photo_data: bytes, caption: str) -> bool:
+        """同步发送图片的辅助方法"""
+        try:
+            # 创建新的事件循环
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            try:
+                # 执行异步发送
+                result = loop.run_until_complete(
+                    bot.send_photo(chat_id=chat_id, photo=photo_data, caption=caption)
+                )
+                return True
+            finally:
+                # 确保循环被正确关闭
+                loop.close()
+                
+        except Exception as e:
+            logger.error(f"同步发送图片失败: {e}")
+            return False
+
     def _send_webhook(self, pattern_data: Dict) -> bool:
         """发送信号到Telegram（替代原有webhook功能）"""
         try:
@@ -2047,6 +2111,9 @@ class CryptoPatternMonitor:
                             try:
                                 # 发送信号到Telegram
                                 if self._send_webhook(pattern_result):
+                                    # 记录已发送的信号
+                                    signal_key = f"{symbol}_{timeframe}_{pattern_type}"
+                                    self.sent_signals[signal_key] = time.time()
                                     logger.info(f"✅ {symbol} {pattern_type} 信号已发送到Telegram")
                                 else:
                                     logger.warning(f"⚠️ {symbol} {pattern_type} 信号发送失败")

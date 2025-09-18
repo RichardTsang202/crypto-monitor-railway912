@@ -455,27 +455,7 @@ class CryptoPatternMonitor:
         blacklist = ['USDCUSDT', 'TUSDUSDT', 'BUSDUSDT', 'FDUSDT']
         
         pairs = [
-    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
-    'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'AVAXUSDT', 'TONUSDT',
-    'LINKUSDT', 'DOTUSDT', 'POLUSDT', 'ICPUSDT', 'NEARUSDT',
-    'UNIUSDT', 'LTCUSDT', 'APTUSDT', 'FILUSDT', 'ETCUSDT',
-    'ATOMUSDT', 'HBARUSDT', 'BCHUSDT', 'INJUSDT', 'SUIUSDT',
-    'ARBUSDT', 'OPUSDT', 'FTMUSDT', 'IMXUSDT', 'STRKUSDT',
-    'MANAUSDT', 'VETUSDT', 'ALGOUSDT', 'GRTUSDT', 'SANDUSDT',
-    'AXSUSDT', 'FLOWUSDT', 'THETAUSDT', 'CHZUSDT', 'APEUSDT',
-    'MKRUSDT', 'AAVEUSDT', 'SNXUSDT', 'QNTUSDT',
-    'GALAUSDT', 'ROSEUSDT', 'KLAYUSDT', 'ENJUSDT', 'RUNEUSDT',
-    'WIFUSDT', 'BONKUSDT', 'FLOKIUSDT', 'NOTUSDT',
-    'PEOPLEUSDT', 'JUPUSDT', 'WLDUSDT', 'ORDIUSDT', 'SEIUSDT',
-    'TIAUSDT', 'RENDERUSDT', 'FETUSDT', 'ARKMUSDT',
-    'PENGUUSDT', 'PNUTUSDT', 'ACTUSDT', 'NEIROUSDT',
-    'RAYUSDT', 'BOMEUSDT', 'MEMEUSDT', 'MOVEUSDT',
-    'EIGENUSDT', 'DYDXUSDT', 'TURBOUSDT','PYTHUSDT', 'JASMYUSDT', 'COMPUSDT', 'CRVUSDT', 'LRCUSDT',
-    'SUSHIUSDT', 'SUSDT', 'YGGUSDT', 'CAKEUSDT', 'OGUSDT',
-    'STORJUSDT', 'KNCUSDT', 'LENDUSDT', 'YFIUSDT', 'FORMUSDT',
-    'ZRXUSDT', 'XLMUSDT', 'XMRUSDT', 'XTZUSDT','BAKEUSDT',
-     'DOLOUSDT', 'SOMIUSDT', 'TRUMPUSDT', 'ONDOUSDT',
-    'NMRUSDT', 'BBUSDT',  'ZECUSDT'
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT'
 ]
         
         # 过滤黑名单
@@ -2027,20 +2007,8 @@ class CryptoPatternMonitor:
                         patterns_found.append(f"{symbol}_{pattern_type}")
                         logger.info(f"✓ {symbol} 检测到形态: {pattern_type}")
                         
-                        # 检查是否需要发送信号
-                        if self._should_send_signal(symbol, timeframe, pattern_type):
-                            try:
-                                webhook_success = self._send_webhook(pattern_result)
-                                if webhook_success:
-                                    # 更新全局webhook时间
-                                    current_time = time.time()
-                                    self.last_webhook_time = current_time
-                                    logger.info(f"Webhook发送成功，下次发送需等待10秒: {symbol} {pattern_type}")
-                                else:
-                                    webhook_failures.append(f"{symbol}_{pattern_type}")
-                            except Exception as e:
-                                logger.error(f"Webhook发送异常: {symbol} - {str(e)}")
-                                webhook_failures.append(f"{symbol}_{pattern_type}")
+                        # 形态检测完成，不发送webhook（已禁用webhook功能）
+                        logger.info(f"形态检测完成: {symbol} {pattern_type} - Webhook功能已禁用")
                     
                     success_count += 1
                     
@@ -2062,8 +2030,7 @@ class CryptoPatternMonitor:
         if failed_pairs:
             logger.warning(f"失败交易对: {', '.join(failed_pairs)}")
         
-        if webhook_failures:
-            logger.warning(f"Webhook失败: {', '.join(webhook_failures)}")
+        # Webhook功能已禁用，不再记录webhook失败信息
         
         return {
             'total': total_pairs,
@@ -2103,20 +2070,8 @@ class CryptoPatternMonitor:
                     patterns_found.append(f"{symbol}_{pattern_type}")
                     logger.info(f"✓ {symbol} 检测到形态: {pattern_type}")
                     
-                    # 检查是否需要发送信号
-                    if self._should_send_signal(symbol, timeframe, pattern_type):
-                        try:
-                            webhook_success = self._send_webhook(pattern_result)
-                            if webhook_success:
-                                # 更新全局webhook时间
-                                current_time = time.time()
-                                self.last_webhook_time = current_time
-                                logger.info(f"Webhook发送成功，下次发送需等待10秒: {symbol} {pattern_type}")
-                            else:
-                                webhook_failures.append(f"{symbol}_{pattern_type}")
-                        except Exception as e:
-                            logger.error(f"Webhook发送异常: {symbol} - {str(e)}")
-                            webhook_failures.append(f"{symbol}_{pattern_type}")
+                    # 形态检测完成，不发送webhook（已禁用webhook功能）
+                    logger.info(f"形态检测完成: {symbol} {pattern_type} - Webhook功能已禁用")
                 
                 success_count += 1
                 
@@ -2148,8 +2103,7 @@ class CryptoPatternMonitor:
         if failed_pairs:
             logger.warning(f"失败交易对: {', '.join(failed_pairs)}")
         
-        if webhook_failures:
-            logger.warning(f"Webhook失败: {', '.join(webhook_failures)}")
+        # Webhook功能已禁用，不再记录webhook失败信息
         
         return {
             'total': total_pairs,

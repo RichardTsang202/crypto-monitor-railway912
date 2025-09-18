@@ -40,6 +40,10 @@ import base64
 from telegram import Bot
 from telegram.error import TelegramError
 import asyncio
+from dotenv import load_dotenv
+
+# 加载环境变量
+load_dotenv()
 
 # 配置日志 - 优化Railway环境支持
 def setup_logging():
@@ -455,7 +459,8 @@ class CryptoPatternMonitor:
         blacklist = ['USDCUSDT', 'TUSDUSDT', 'BUSDUSDT', 'FDUSDT']
         
         pairs = [
-    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',  'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'AVAXUSDT', 'TONUSDT',
+    'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT',
+    'DOGEUSDT', 'ADAUSDT', 'TRXUSDT', 'AVAXUSDT', 'TONUSDT',
     'LINKUSDT', 'DOTUSDT', 'POLUSDT', 'ICPUSDT', 'NEARUSDT',
     'UNIUSDT', 'LTCUSDT', 'APTUSDT', 'FILUSDT', 'ETCUSDT',
     'ATOMUSDT', 'HBARUSDT', 'BCHUSDT', 'INJUSDT', 'SUIUSDT',
@@ -2026,8 +2031,20 @@ class CryptoPatternMonitor:
                         patterns_found.append(f"{symbol}_{pattern_type}")
                         logger.info(f"✓ {symbol} 检测到形态: {pattern_type}")
                         
-                        # 形态检测完成，不发送webhook（已禁用webhook功能）
-                        logger.info(f"形态检测完成: {symbol} {pattern_type} - Webhook功能已禁用")
+                        # 检查是否应该发送信号
+                        if self._should_send_signal(symbol, timeframe, pattern_type):
+                            try:
+                                # 发送信号到Telegram
+                                if self._send_webhook(pattern_result):
+                                    logger.info(f"✅ {symbol} {pattern_type} 信号已发送到Telegram")
+                                else:
+                                    logger.warning(f"⚠️ {symbol} {pattern_type} 信号发送失败")
+                                    webhook_failures.append(f"{symbol}_{pattern_type}")
+                            except Exception as e:
+                                logger.error(f"❌ {symbol} {pattern_type} 信号发送异常: {str(e)}")
+                                webhook_failures.append(f"{symbol}_{pattern_type}")
+                        else:
+                            logger.info(f"⏭️ {symbol} {pattern_type} 跳过发送（间隔限制或其他条件）")
                     
                     success_count += 1
                     
@@ -2049,7 +2066,8 @@ class CryptoPatternMonitor:
         if failed_pairs:
             logger.warning(f"失败交易对: {', '.join(failed_pairs)}")
         
-        # Webhook功能已禁用，不再记录webhook失败信息
+        if webhook_failures:
+            logger.warning(f"Webhook失败: {', '.join(webhook_failures)}")
         
         return {
             'total': total_pairs,
@@ -2089,8 +2107,19 @@ class CryptoPatternMonitor:
                     patterns_found.append(f"{symbol}_{pattern_type}")
                     logger.info(f"✓ {symbol} 检测到形态: {pattern_type}")
                     
-                    # 形态检测完成，不发送webhook（已禁用webhook功能）
-                    logger.info(f"形态检测完成: {symbol} {pattern_type} - Webhook功能已禁用")
+                    # 检查是否应该发送信号
+                    if self._should_send_signal(symbol, timeframe, pattern_type):
+                        try:
+                            # 发送Telegram信号
+                            success = self._send_webhook(pattern_result)
+                            if success:
+                                logger.info(f"✓ {symbol} {pattern_type} 信号已发送到Telegram")
+                            else:
+                                logger.warning(f"⚠ {symbol} {pattern_type} 信号发送失败")
+                        except Exception as e:
+                            logger.error(f"❌ {symbol} {pattern_type} 信号发送异常: {e}")
+                    else:
+                        logger.info(f"跳过发送信号: {symbol} {pattern_type} (重复或不符合发送条件)")
                 
                 success_count += 1
                 
@@ -2122,7 +2151,8 @@ class CryptoPatternMonitor:
         if failed_pairs:
             logger.warning(f"失败交易对: {', '.join(failed_pairs)}")
         
-        # Webhook功能已禁用，不再记录webhook失败信息
+        if webhook_failures:
+            logger.warning(f"Webhook失败: {', '.join(webhook_failures)}")
         
         return {
             'total': total_pairs,

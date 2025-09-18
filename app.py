@@ -3,15 +3,14 @@
 """
 加密货币形态识别监控系统 - 修复版
 
-本系统专注于识别四种经典的价格形态：双顶、双底、头肩顶、头肩底。
+本系统专注于识别四种经典的价格形态：双顶、双底、EMA趋势。
 采用多数据源架构，具备自动故障转移能力，通过严格的技术指标验证确保信号质量。
 
 主要特性：
 - 智能缓存管理，仅缓存极值点和必要数据
 - 并发处理提升性能
 - 14周期ATR动态计算
-- 精确的ABCD点获取逻辑
-- 多时间粒度监控（1H、4H、1D）
+- 精确的ABC点获取逻辑
 - 内存使用优化和自动清理
 """
 
@@ -223,7 +222,51 @@ class CryptoPatternMonitor:
         # Telegram配置
         self.telegram_token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
         self.telegram_channel_id = os.environ.get('TELEGRAM_CHANNEL_ID', '')
-        self.telegram_bot = Bot(token=self.telegram_token) if self.telegram_token else None
+        
+        # 详细的Telegram配置调试信息
+        logger.info(f"🔍 Telegram配置检查:")
+        logger.info(f"  - Token存在: {'是' if self.telegram_token else '否'}")
+        logger.info(f"  - Token长度: {len(self.telegram_token) if self.telegram_token else 0}")
+        logger.info(f"  - Channel ID存在: {'是' if self.telegram_channel_id else '否'}")
+        logger.info(f"  - Channel ID: {self.telegram_channel_id}")
+        
+        # 测试环境变量读取
+        logger.info(f"🔧 环境变量测试:")
+        all_env_vars = dict(os.environ)
+        telegram_vars = {k: v for k, v in all_env_vars.items() if 'TELEGRAM' in k.upper()}
+        if telegram_vars:
+            logger.info(f"  - 找到Telegram相关环境变量: {list(telegram_vars.keys())}")
+            for key, value in telegram_vars.items():
+                # 只显示前10个字符，保护敏感信息
+                masked_value = value[:10] + '...' if len(value) > 10 else value
+                logger.info(f"  - {key}: {masked_value}")
+        else:
+            logger.warning(f"  - 未找到任何Telegram相关环境变量")
+            logger.info(f"  - 当前所有环境变量数量: {len(all_env_vars)}")
+            # 显示部分环境变量名称用于调试
+            env_keys = list(all_env_vars.keys())[:10]
+            logger.info(f"  - 前10个环境变量: {env_keys}")
+        
+        # 尝试创建Telegram Bot实例
+        self.telegram_bot = None
+        if self.telegram_token:
+            try:
+                self.telegram_bot = Bot(token=self.telegram_token)
+                logger.info("✅ Telegram Bot实例创建成功")
+                
+                # 测试Bot连接
+                try:
+                    bot_info = self.telegram_bot.get_me()
+                    logger.info(f"✅ Bot连接测试成功: @{bot_info.username}")
+                except Exception as test_error:
+                    logger.error(f"❌ Bot连接测试失败: {str(test_error)}")
+                    
+            except Exception as bot_error:
+                logger.error(f"❌ Telegram Bot实例创建失败: {str(bot_error)}")
+                self.telegram_bot = None
+        else:
+            logger.warning("❌ Telegram Bot实例创建失败 - Token为空")
+            
         self.last_telegram_time = 0  # Telegram发送时间控制
         self.telegram_send_interval = 3  # 3秒间隔
         
@@ -1731,19 +1774,28 @@ class CryptoPatternMonitor:
         try:
             # 检查Bot实例是否存在
             if not self.telegram_bot:
-                logger.warning("Telegram Bot未配置，跳过发送")
+                logger.warning("❌ Telegram Bot未配置，跳过发送")
+                logger.warning(f"  - Token存在: {'是' if self.telegram_token else '否'}")
+                logger.warning(f"  - Channel ID存在: {'是' if self.telegram_channel_id else '否'}")
+                return False
+                
+            # 检查Channel ID
+            if not self.telegram_channel_id:
+                logger.error("❌ Telegram Channel ID未配置")
                 return False
                 
             # 检查发送间隔
             current_time = time.time()
             if current_time - self.last_telegram_time < self.telegram_send_interval:
-                logger.info(f"Telegram发送间隔未到，跳过发送")
+                logger.info(f"⏰ Telegram发送间隔未到，跳过发送 (间隔: {current_time - self.last_telegram_time:.1f}s)")
                 return False
             
             symbol = pattern_data.get('symbol', 'UNKNOWN')
             pattern_type = pattern_data.get('pattern_type', 'UNKNOWN')
             timeframe = pattern_data.get('timeframe', 'UNKNOWN')
             price = pattern_data.get('current_price', 0)
+            
+            logger.info(f"🚀 准备发送Telegram消息: {symbol} {pattern_type}")
             
             # 构建消息文本
             message_lines = [
@@ -1775,37 +1827,52 @@ class CryptoPatternMonitor:
                     message_lines.append(f"🔄 聚合度: {pattern_data['convergence']:.2f}")
             
             message_text = '\n'.join(message_lines)
+            logger.info(f"📝 消息内容准备完成，长度: {len(message_text)}")
             
             # 发送文本消息
-            self.telegram_bot.send_message(
+            logger.info(f"📤 正在发送文本消息到频道: {self.telegram_channel_id}")
+            response = self.telegram_bot.send_message(
                 chat_id=self.telegram_channel_id,
                 text=message_text,
                 parse_mode='HTML'
             )
+            logger.info(f"✅ 文本消息发送成功，消息ID: {response.message_id}")
             
             # 如果有图表，发送图片
             if chart_base64:
-                img_data = base64.b64decode(chart_base64)
-                img_buffer = io.BytesIO(img_data)
-                img_buffer.name = f'{symbol}_{timeframe}_{pattern_type}.png'
-                
-                self.telegram_bot.send_photo(
-                    chat_id=self.telegram_channel_id,
-                    photo=img_buffer,
-                    caption=f"{symbol} {pattern_type} 图表"
-                )
+                try:
+                    logger.info("📊 准备发送图表...")
+                    img_data = base64.b64decode(chart_base64)
+                    img_buffer = io.BytesIO(img_data)
+                    img_buffer.name = f'{symbol}_{timeframe}_{pattern_type}.png'
+                    
+                    photo_response = self.telegram_bot.send_photo(
+                        chat_id=self.telegram_channel_id,
+                        photo=img_buffer,
+                        caption=f"{symbol} {pattern_type} 图表"
+                    )
+                    logger.info(f"✅ 图表发送成功，消息ID: {photo_response.message_id}")
+                except Exception as photo_error:
+                    logger.error(f"❌ 图表发送失败: {str(photo_error)}")
+                    # 图表发送失败不影响整体成功状态
             
             # 更新发送时间
             self.last_telegram_time = current_time
             
-            logger.info(f"✅ Telegram消息发送成功 - {symbol} {pattern_type}")
+            logger.info(f"🎉 Telegram消息发送完成 - {symbol} {pattern_type}")
             return True
             
         except TelegramError as e:
-            logger.error(f"❌ Telegram发送失败 - {symbol} {pattern_type}: {str(e)}")
+            logger.error(f"❌ Telegram API错误 - {symbol} {pattern_type}")
+            logger.error(f"  - 错误类型: {type(e).__name__}")
+            logger.error(f"  - 错误信息: {str(e)}")
+            logger.error(f"  - Channel ID: {self.telegram_channel_id}")
             return False
         except Exception as e:
-            logger.error(f"❌ Telegram发送异常 - {symbol} {pattern_type}: {str(e)}")
+            logger.error(f"❌ Telegram发送异常 - {symbol} {pattern_type}")
+            logger.error(f"  - 异常类型: {type(e).__name__}")
+            logger.error(f"  - 异常信息: {str(e)}")
+            logger.error(f"  - Channel ID: {self.telegram_channel_id}")
             return False
     
     def _send_webhook(self, pattern_data: Dict) -> bool:
@@ -2076,91 +2143,116 @@ class CryptoPatternMonitor:
         consecutive_errors = 0
         max_consecutive_errors = 8  # 增加容错性
         error_backoff_delays = [30, 60, 120, 300]
-        cycle_count = 0  # 添加周期计数
         
         # 更新线程健康状态
         if timeframe in self.thread_health:
             self.thread_health[timeframe]['last_activity'] = datetime.now()
         
-        logger.info(f"[{timeframe}] 监控线程已启动，开始运行循环")
+        logger.info(f"[{timeframe}] 监控线程已启动，等待首次触发时间")
+        
+        # 计算到下一个触发时间的等待时间
+        def calculate_wait_time():
+            current_time = datetime.now()
+            if timeframe == '1h':
+                # 计算到下一个小时01秒的等待时间
+                next_hour = current_time.replace(minute=0, second=1, microsecond=0) + timedelta(hours=1)
+                wait_seconds = (next_hour - current_time).total_seconds()
+                
+                # 如果当前时间已经过了01秒，等待到下一个小时的01秒
+                if current_time.second > 1:
+                    return wait_seconds
+                # 如果当前时间在01秒之前，等待到当前小时的01秒
+                elif current_time.second < 1:
+                    current_hour_trigger = current_time.replace(minute=0, second=1, microsecond=0)
+                    wait_time = (current_hour_trigger - current_time).total_seconds()
+                    # 确保至少等待几秒，避免启动时立即触发
+                    return max(wait_time, 5)
+                else:
+                    # 正好是01秒，但为了避免启动时立即触发，等待到下一个小时
+                    return wait_seconds
+            return 60  # 默认等待1分钟
         
         while self.running:
             try:
-                cycle_count += 1
                 # 更新线程活动时间
                 if timeframe in self.thread_health:
                     self.thread_health[timeframe]['last_activity'] = datetime.now()
                 
                 current_time = datetime.now()
-                should_analyze = False
                 
-                # 每10个周期记录一次运行状态
-                if cycle_count % 10 == 0:
-                    logger.info(f"[{timeframe}] 运行状态检查 - 周期: {cycle_count}, 连续错误: {consecutive_errors}, 时间: {current_time.strftime('%H:%M:%S')}")
+                # 计算等待时间
+                wait_time = calculate_wait_time()
                 
-                # 根据时间粒度确定是否应该分析（每小时01秒触发）
-                if timeframe == '1h':
-                    if current_time.second == 1:
-                        should_analyze = True
-                        logger.info(f"[{timeframe}] 触发分析 - {current_time.strftime('%H:%M:%S')}")
+                if wait_time > 0:
+                    logger.info(f"[{timeframe}] 等待 {wait_time:.1f} 秒到下一个触发时间 ({current_time.strftime('%H:%M:%S')})")
+                    
+                    # 分段等待，每30秒检查一次运行状态
+                    while wait_time > 0 and self.running:
+                        sleep_duration = min(30, wait_time)
+                        time.sleep(sleep_duration)
+                        wait_time -= sleep_duration
+                        
+                        # 更新线程活动时间
+                        if timeframe in self.thread_health:
+                            self.thread_health[timeframe]['last_activity'] = datetime.now()
+                
+                if not self.running:
+                    break
+                
+                # 到达触发时间，执行分析
+                current_time = datetime.now()
+                analysis_key = f"{timeframe}_{current_time.strftime('%Y%m%d_%H')}"
                 
                 # 防重复分析检查
-                if should_analyze:
-                    if timeframe == '1h':
-                        analysis_key = f"{timeframe}_{current_time.strftime('%Y%m%d_%H')}"
+                if analysis_key not in self.last_analysis_time:
+                    self.last_analysis_time[analysis_key] = current_time
+                    logger.info(f"[{timeframe}] 🚀 开始执行分析 - {current_time.strftime('%H:%M:%S')}")
                     
-                    if analysis_key not in self.last_analysis_time:
-                        self.last_analysis_time[analysis_key] = current_time
-                        logger.info(f"[{timeframe}] 开始执行分析")
+                    try:
+                        result = self._analyze_all_pairs_sequential(timeframe)
+                        logger.info(f"[{timeframe}] ✅ 分析成功 - 耗时: {result.get('duration', 0):.2f}秒")
                         
-                        try:
-                            result = self._analyze_all_pairs_sequential(timeframe)
-                            logger.info(f"[{timeframe}] 分析成功 - 耗时: {result.get('duration', 0):.2f}秒")
+                        consecutive_errors = 0
+                        self._update_system_health('healthy')
+                        
+                        # 更新线程健康状态
+                        if timeframe in self.thread_health:
+                            self.thread_health[timeframe]['status'] = 'running'
+                            self.thread_health[timeframe]['error_count'] = 0
                             
-                            consecutive_errors = 0
-                            self._update_system_health('healthy')
-                            
-                            # 更新线程健康状态
-                            if timeframe in self.thread_health:
-                                self.thread_health[timeframe]['status'] = 'running'
-                                self.thread_health[timeframe]['error_count'] = 0
-                                
-                        except Exception as e:
-                            logger.error(f"[{timeframe}] 分析失败: {str(e)}")
-                            consecutive_errors += 1
-                            self._update_system_health('error', e)
-                            
-                            if timeframe in self.thread_health:
-                                self.thread_health[timeframe]['status'] = 'error'
-                                self.thread_health[timeframe]['error_count'] += 1
+                    except Exception as e:
+                        logger.error(f"[{timeframe}] ❌ 分析失败: {str(e)}")
+                        consecutive_errors += 1
+                        self._update_system_health('error', e)
+                        
+                        if timeframe in self.thread_health:
+                            self.thread_health[timeframe]['status'] = 'error'
+                            self.thread_health[timeframe]['error_count'] += 1
+                else:
+                    logger.info(f"[{timeframe}] ⏭️ 跳过重复分析 - {analysis_key}")
                 
                 # 错误恢复逻辑
                 if consecutive_errors >= max_consecutive_errors:
                     delay_index = min(consecutive_errors - max_consecutive_errors, len(error_backoff_delays) - 1)
                     recovery_delay = error_backoff_delays[delay_index]
-                    logger.warning(f"{timeframe} 连续错误 {consecutive_errors} 次，休眠 {recovery_delay} 秒")
+                    logger.warning(f"[{timeframe}] ⚠️ 连续错误 {consecutive_errors} 次，休眠 {recovery_delay} 秒")
                     time.sleep(recovery_delay)
                 
-                # 动态调整检查间隔
-                check_interval = 30 if consecutive_errors == 0 else 60
+                # 清理过期的分析记录（保留最近24小时）
+                cutoff_time = current_time - timedelta(hours=24)
+                expired_keys = [k for k, v in self.last_analysis_time.items() if v < cutoff_time]
+                for key in expired_keys:
+                    del self.last_analysis_time[key]
                 
-                # 每100个周期清理一次缓存
-                if cycle_count % 100 == 0:
-                    logger.info(f"[{timeframe}] 执行定期缓存清理 - 周期: {cycle_count}")
-                    try:
-                        self.data_cache._cleanup_cache()
-                        logger.info(f"[{timeframe}] 缓存清理完成")
-                    except Exception as e:
-                        logger.error(f"[{timeframe}] 缓存清理失败: {str(e)}")
-                
-                time.sleep(check_interval)
+                if expired_keys:
+                    logger.debug(f"[{timeframe}] 清理了 {len(expired_keys)} 个过期分析记录")
                 
             except KeyboardInterrupt:
-                logger.info(f"{timeframe} 监控收到停止信号")
+                logger.info(f"[{timeframe}] 监控收到停止信号")
                 break
             except Exception as e:
                 consecutive_errors += 1
-                logger.error(f"{timeframe} 监控异常: {str(e)}")
+                logger.error(f"[{timeframe}] 监控异常: {str(e)}")
                 self._update_system_health('error', e)
                 
                 if timeframe in self.thread_health:
@@ -2487,6 +2579,79 @@ def health():
     logger.info(f"健康检查完成 - 状态: {overall_status}, 系统状态: {system_status}, 健康线程: {total_threads - unhealthy_threads}/{total_threads}")
     
     return jsonify(response_data), http_status
+
+@app.route('/telegram/test')
+def test_telegram():
+    """测试Telegram配置和连接"""
+    try:
+        result = {
+            'status': 'success',
+            'config': {
+                'token_exists': bool(monitor.telegram_token),
+                'token_length': len(monitor.telegram_token) if monitor.telegram_token else 0,
+                'channel_id_exists': bool(monitor.telegram_channel_id),
+                'channel_id': monitor.telegram_channel_id,
+                'bot_instance_exists': monitor.telegram_bot is not None
+            },
+            'tests': {}
+        }
+        
+        # 测试环境变量
+        telegram_env_vars = {k: v for k, v in os.environ.items() if 'TELEGRAM' in k.upper()}
+        result['config']['env_vars'] = list(telegram_env_vars.keys())
+        
+        # 测试Bot连接
+        if monitor.telegram_bot:
+            try:
+                bot_info = monitor.telegram_bot.get_me()
+                result['tests']['bot_connection'] = {
+                    'status': 'success',
+                    'bot_username': bot_info.username,
+                    'bot_id': bot_info.id,
+                    'bot_name': bot_info.first_name
+                }
+            except Exception as e:
+                result['tests']['bot_connection'] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        else:
+            result['tests']['bot_connection'] = {
+                'status': 'error',
+                'error': 'Bot instance not created'
+            }
+        
+        # 测试发送消息
+        if monitor.telegram_bot and monitor.telegram_channel_id:
+            try:
+                test_message = f"🧪 Telegram连接测试 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                response = monitor.telegram_bot.send_message(
+                    chat_id=monitor.telegram_channel_id,
+                    text=test_message
+                )
+                result['tests']['message_send'] = {
+                    'status': 'success',
+                    'message_id': response.message_id,
+                    'chat_id': response.chat.id
+                }
+            except Exception as e:
+                result['tests']['message_send'] = {
+                    'status': 'error',
+                    'error': str(e)
+                }
+        else:
+            result['tests']['message_send'] = {
+                'status': 'skipped',
+                'reason': 'Bot or channel ID not configured'
+            }
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({
+            'status': 'error',
+            'error': str(e)
+        }), 500
 
 @app.route('/cache/clear')
 def clear_cache():

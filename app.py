@@ -254,10 +254,17 @@ class CryptoPatternMonitor:
                 self.telegram_bot = Bot(token=self.telegram_token)
                 logger.info("✅ Telegram Bot实例创建成功")
                 
-                # 测试Bot连接
+                # 测试Bot连接（异步调用需要在事件循环中执行）
                 try:
-                    bot_info = self.telegram_bot.get_me()
-                    logger.info(f"✅ Bot连接测试成功: @{bot_info.username}")
+                    # 创建新的事件循环来执行异步操作
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    try:
+                        bot_info = loop.run_until_complete(self.telegram_bot.get_me())
+                        logger.info(f"✅ Bot连接测试成功: @{bot_info.username}")
+                    finally:
+                        loop.close()
                 except Exception as test_error:
                     logger.error(f"❌ Bot连接测试失败: {str(test_error)}")
                     
@@ -1829,14 +1836,19 @@ class CryptoPatternMonitor:
             message_text = '\n'.join(message_lines)
             logger.info(f"📝 消息内容准备完成，长度: {len(message_text)}")
             
-            # 发送文本消息
+            # 发送文本消息（异步调用）
             logger.info(f"📤 正在发送文本消息到频道: {self.telegram_channel_id}")
-            response = self.telegram_bot.send_message(
-                chat_id=self.telegram_channel_id,
-                text=message_text,
-                parse_mode='HTML'
-            )
-            logger.info(f"✅ 文本消息发送成功，消息ID: {response.message_id}")
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                response = loop.run_until_complete(self.telegram_bot.send_message(
+                    chat_id=self.telegram_channel_id,
+                    text=message_text,
+                    parse_mode='HTML'
+                ))
+                logger.info(f"✅ 文本消息发送成功，消息ID: {response.message_id}")
+            finally:
+                loop.close()
             
             # 如果有图表，发送图片
             if chart_base64:
@@ -1846,12 +1858,18 @@ class CryptoPatternMonitor:
                     img_buffer = io.BytesIO(img_data)
                     img_buffer.name = f'{symbol}_{timeframe}_{pattern_type}.png'
                     
-                    photo_response = self.telegram_bot.send_photo(
-                        chat_id=self.telegram_channel_id,
-                        photo=img_buffer,
-                        caption=f"{symbol} {pattern_type} 图表"
-                    )
-                    logger.info(f"✅ 图表发送成功，消息ID: {photo_response.message_id}")
+                    # 异步发送图片
+                    photo_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(photo_loop)
+                    try:
+                        photo_response = photo_loop.run_until_complete(self.telegram_bot.send_photo(
+                            chat_id=self.telegram_channel_id,
+                            photo=img_buffer,
+                            caption=f"{symbol} {pattern_type} 图表"
+                        ))
+                        logger.info(f"✅ 图表发送成功，消息ID: {photo_response.message_id}")
+                    finally:
+                        photo_loop.close()
                 except Exception as photo_error:
                     logger.error(f"❌ 图表发送失败: {str(photo_error)}")
                     # 图表发送失败不影响整体成功状态
@@ -2600,16 +2618,21 @@ def test_telegram():
         telegram_env_vars = {k: v for k, v in os.environ.items() if 'TELEGRAM' in k.upper()}
         result['config']['env_vars'] = list(telegram_env_vars.keys())
         
-        # 测试Bot连接
+        # 测试Bot连接（异步调用）
         if monitor.telegram_bot:
             try:
-                bot_info = monitor.telegram_bot.get_me()
-                result['tests']['bot_connection'] = {
-                    'status': 'success',
-                    'bot_username': bot_info.username,
-                    'bot_id': bot_info.id,
-                    'bot_name': bot_info.first_name
-                }
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    bot_info = loop.run_until_complete(monitor.telegram_bot.get_me())
+                    result['tests']['bot_connection'] = {
+                        'status': 'success',
+                        'bot_username': bot_info.username,
+                        'bot_id': bot_info.id,
+                        'bot_name': bot_info.first_name
+                    }
+                finally:
+                    loop.close()
             except Exception as e:
                 result['tests']['bot_connection'] = {
                     'status': 'error',
@@ -2621,19 +2644,24 @@ def test_telegram():
                 'error': 'Bot instance not created'
             }
         
-        # 测试发送消息
+        # 测试发送消息（异步调用）
         if monitor.telegram_bot and monitor.telegram_channel_id:
             try:
                 test_message = f"🧪 Telegram连接测试 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                response = monitor.telegram_bot.send_message(
-                    chat_id=monitor.telegram_channel_id,
-                    text=test_message
-                )
-                result['tests']['message_send'] = {
-                    'status': 'success',
-                    'message_id': response.message_id,
-                    'chat_id': response.chat.id
-                }
+                msg_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(msg_loop)
+                try:
+                    response = msg_loop.run_until_complete(monitor.telegram_bot.send_message(
+                        chat_id=monitor.telegram_channel_id,
+                        text=test_message
+                    ))
+                    result['tests']['message_send'] = {
+                        'status': 'success',
+                        'message_id': response.message_id,
+                        'chat_id': response.chat.id
+                    }
+                finally:
+                    msg_loop.close()
             except Exception as e:
                 result['tests']['message_send'] = {
                     'status': 'error',
